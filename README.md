@@ -1,8 +1,10 @@
+SMC version
+
 # testing-documentserver-capacity
 Script for testing [ONLYOFFICE Document Server][2] capacity.
 
 ## Super simple to use
-    $ node capacity.js --debug --users 2 --documents 5 --server wss://your-server.com --file https://your-server.com/sample.xlsx
+    $ node capacity.js --debug --users 2 --documents 5 --server wss://your-server.com --base https://your-server.com/
 
 ## Installation
     $ npm install
@@ -12,7 +14,7 @@ Script for testing [ONLYOFFICE Document Server][2] capacity.
 - `--users` count users per one document
 - `--documents` count documents
 - `--server` url to the testing server
-- `--file` url to opening file
+- `--file` url to opening files configured. Is the OnlyOffice example project
 
 ## User Feedback and Support
 

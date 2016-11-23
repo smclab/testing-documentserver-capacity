@@ -47,8 +47,8 @@ function randomNumber(count = 1000) {
 }
 
 const enableLog = -1 !== process.argv.indexOf('--debug');
-function log(message) {
-	enableLog && console.log(message);
+function log(docId, message) {
+	enableLog && console.log(new Date().toLocaleString() + ' ' + docId + ': ' + message);
 }
 
 function DocsCoApi(options = {}) {
@@ -58,27 +58,30 @@ function DocsCoApi(options = {}) {
 	this.sessionId = randomString();
 	this.serverId = randomNumber();
 	this.client = null;
+	this.uid = null;
+	this.isWord = false;
+	this.changeCount = 100;
 	this.init();
 }
 DocsCoApi.prototype.init = function () {
 	this.client =
 		new W3CWebSocket(this.server + '/doc/' + this.docId + '/c/' + this.serverId + '/' + this.sessionId + '/websocket');
 	this.client.onerror = () => {
-		log('Connection Error');
+		this._log('Connection Error');
 	};
 
 	this.client.onopen = () => {
-		log('WebSocket Client Connected');
+		this._log('WebSocket Client Connected');
 	};
 
 	this.client.onclose = () => {
-		log('echo-protocol Client Closed');
+		this._log('echo-protocol Client Closed');
 	};
 
 	this.client.onmessage = (e) => {
 		const msg = e.data;
 		if (typeof msg === 'string') {
-			log('Received: "' + msg + '"');
+			this._log('Received: "' + msg + '"');
 
 			const type = msg.slice(0, 1);
 			const content = msg.slice(1);
@@ -88,16 +91,16 @@ DocsCoApi.prototype.init = function () {
 				try {
 					payload = JSON.parse(content);
 				} catch (e) {
-					log('bad json', content);
+					this._log('bad json', content);
 				}
 			}
 
 			switch (type) {
 				case 'o':
-					log('open');
+					this._log('open');
 					break;
 				case 'h':
-					log('heartbeat');
+					this._log('heartbeat');
 					break;
 				case 'a':
 					if (Array.isArray(payload)) {
@@ -110,45 +113,84 @@ DocsCoApi.prototype.init = function () {
 					this.onMessage(payload);
 					break;
 				case 'c':
-					log('close');
+					this._log('close');
 					break;
 			}
 		}
 	};
 };
+DocsCoApi.prototype._log = function (message) {
+	log(this.docId, message);
+};
 DocsCoApi.prototype._onAuth = function (data) {
+	this._log('onAuth ');
+	console.log(data);
+
+	var participants = data['participants'];
+	//console.log(participants[0].id);
+	this.uid = participants[0].id;
 };
 DocsCoApi.prototype._onMessages = function (data) {
-	log('onMessages: ' + data["messages"]);
+	this._log('onMessages: ' + data["messages"]);
+	console.log(data);
+
+	this.doWordChange();
 };
 DocsCoApi.prototype._onCursor = function (data) {
+	this._log('onCursor ');
+	console.log(data);
 };
 DocsCoApi.prototype._onGetLock = function (data) {
+	this._log('onGetLock ');
+	console.log(data);
 };
 DocsCoApi.prototype._onReleaseLock = function (data) {
+	this._log('onReleaseLock ');
+	console.log(data);
 };
 DocsCoApi.prototype._onConnectionStateChanged = function (data) {
+	this._log('onConnectionStateChanged ');
+	console.log(data);
 };
 DocsCoApi.prototype._onSaveChanges = function (data) {
+	this._log('onSaveChanges ');
+	console.log(data);
 };
 DocsCoApi.prototype._onSaveLock = function (data) {
+	this._log('onSaveLock ');
+	console.log(data);
 };
 DocsCoApi.prototype._onUnSaveLock = function (data) {
+	this._log('onUnSaveLock ');
+	console.log(data);
+
+	this.doWordChange();
 };
 DocsCoApi.prototype._onSavePartChanges = function (data) {
+	this._log('onSavePartChanges ');
+	console.log(data);
 };
 DocsCoApi.prototype._onDrop = function (data) {
+	this._log('onDrop ');
+	console.log(data);
 };
-DocsCoApi.prototype._documentOpen = function (data) {
+DocsCoApi.prototype._documentOpen = function (data1) {
 	this.sendRequest({'type': 'getMessages'});
+	this._log('documentOpen ');
+	var data = data1.toString();
+	// Removed: Fix broken url
+	console.log(data);
+
 	if ((data = data['data']) && (data = data['data']) && (data = data['Editor.bin'])) {
-		request(data).pipe(fs.createWriteStream(randomString() + '-' + 'Editor.bin'));
+		request(data).pipe(fs.createWriteStream('files/' + randomString() + '-' + 'Editor.bin'));
 		return;
 	}
 
-	log('error open file: ' + this.url);
+	this._log('error open file: ' + this.url);
 };
 DocsCoApi.prototype._onWarning = function (data) {
+	this._log('onWarning ');
+	console.log(data);
 };
 DocsCoApi.prototype._onLicense = function (data) {
 	this.sendRequest({
@@ -176,7 +218,8 @@ DocsCoApi.prototype._onLicense = function (data) {
 	});
 };
 DocsCoApi.prototype.onMessage = function (data) {
-	log('message: "' + data + '"');
+	this._log('message: "' + data + '"');
+	console.log(data);
 
 	var dataObject = JSON.parse(data);
 	switch (dataObject['type']) {
@@ -232,14 +275,34 @@ DocsCoApi.prototype.onMessage = function (data) {
 DocsCoApi.prototype.sendRequest = function (data) {
 	if (this.client.readyState === this.client.OPEN) {
 		const sendData = JSON.stringify(data);
-		log("Send: '" + sendData + "'");
+		this._log("Send: '" + sendData + "'");
 		this.client.send(quote(sendData));
 	}
 };
+DocsCoApi.prototype.doWordChange = function () {
+	if (this.changeCount == 0) {
+		this.sendRequest({'type': 'close'});
+		//this.client.close();
+		return;
+	}
+
+	this._log('do change #' + this.changeCount--);
+
+	this.sendRequest({
+		type: 'saveChanges',
+  		changes: '["80;AgAAADEAAQAAAP//AAAdcq7bTWYAAC0BAAAEAAAAAAAAAAAAAAABAAAAAAAAAPb///8aAAAANAAuADEALgA1AC4AMQAuAEAAQABSAGUAdgA=","35;BgAAADEANQAwABwAAAABAAAAAQEAAAAAAAAAAQAAAHQAAAA=","35;BgAAADEANQAwABwAAAABAAAAAQEAAAABAAAAAQAAAGUAAAA=","35;BgAAADEANQAwABwAAAABAAAAAQEAAAACAAAAAQAAAHMAAAA=","35;BgAAADEANQAwABwAAAABAAAAAQEAAAADAAAAAQAAAHQAAAA=","80;AgAAADEAAQAAAP//AAAdcq7bTWYAAIsAAAABAAAAAQAAAAAAAAABAAAAAAAAAPb///8aAAAANAAuADEALgA1AC4AMQAuAEAAQABSAGUAdgA=","35;BgAAADEANQAwABwAAAABAAAAAQEAAAAEAAAAAgAAAAAAAAA="]',
+  		startSaveChanges: true,
+  		endSaveChanges: true,
+  		isCoAuthoring: false,
+  		isExcel: false,
+  		deleteIndex: null,
+  		excelAdditionalInfo: '{"Gk":"' + this.uid + '","B4c":"uid-1","OLc":"14;BgAAADEANQAwAAUAAAA="}'
+	});
+};
 
 var countUsers = 1;
-var countDocuments = 5;
-var serverUrl, documentUrl;
+var countDocuments = 1;
+var serverUrl, documentUrl, baseUrl;
 
 var indexArg = process.argv.indexOf('--users');
 if (-1 !== indexArg) {
@@ -257,11 +320,31 @@ indexArg = process.argv.indexOf('--file');
 if (-1 !== indexArg) {
 	documentUrl = process.argv[indexArg + 1];
 }
+indexArg = process.argv.indexOf('--base-url');
+if (-1 !== indexArg) {
+	baseUrl = process.argv[indexArg + 1];
+}
+
+var docNames = [
+//'test.odt', 'test.docx'
+ 'test.docx'
+];
+//'msoffice1.xlsx' ];
+
+var now = new Date();
+
+var prefix = dateFormat(now, 'mmddHHMM');
 
 var sDocId;
-for (var nDoc = 0; nDoc < countDocuments; ++nDoc) {
-	sDocId = randomString();
-	for (var nUser = 0; nUser < countUsers; ++nUser) {
+for (var nUser = 0; nUser < countUsers; ++nUser) {
+	for (var nDoc = 0; nDoc < countDocuments; ++nDoc) {
+		sDocId = prefix + '_' + nUser + '_' + nDoc + '_' + randomString();
+
+		if (baseUrl) {
+			var x = (nDoc * nUser)  % docNames.length;
+
+			documentUrl = baseUrl + '/' + docNames[x];
+		}
 		var oDocsCoApi = new DocsCoApi({server: serverUrl, docId: sDocId, url: documentUrl});
 	}
 }
